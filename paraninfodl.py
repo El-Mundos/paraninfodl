@@ -72,7 +72,11 @@ def make_iv(tenant_id: str, issue_id: str) -> bytes:
 
 def decrypt(data: bytes, iv: bytes) -> bytes:
     """Replica CK() + decryptArrayBuffer(): base64 → AES-GCM decrypt"""
-    return AESGCM(_KEY).decrypt(iv, base64.b64decode(data), None)
+    b64 = data.strip()
+    padding = 4 - len(b64) % 4
+    if padding != 4:
+        b64 += b"=" * padding
+    return AESGCM(_KEY).decrypt(iv, base64.b64decode(b64), None)
 
 
 # ── Sesión ────────────────────────────────────────────────────────────────────
