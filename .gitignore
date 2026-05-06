@@ -1,0 +1,31 @@
+# Sesión guardada (contiene cookies de tu cuenta)
+*.json
+!package.json
+
+# PDFs generados
+*.pdf
+
+# Páginas descargadas temporales
+paginas_libro/
+output/
+
+# Python
+__pycache__/
+*.py[cod]
+*.pyo
+.venv/
+venv/
+env/
+*.egg-info/
+dist/
+build/
+
+# Editor
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# OS
+.DS_Store
+Thumbs.db
