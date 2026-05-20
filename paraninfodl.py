@@ -33,22 +33,12 @@ import time
 import argparse
 from pathlib import Path
 from html.parser import HTMLParser
-from cryptography.hazmat.primitives.ciphers.aead import AESGCM
-from playwright.sync_api import sync_playwright
-import img2pdf
-import requests
-from PIL import Image
 
 try:
     from importlib.metadata import version as _pkg_version
     __version__ = _pkg_version("paraninfodl")
 except Exception:
     __version__ = "dev"
-
-try:
-    import tomllib
-except ImportError:
-    import tomli as tomllib
 
 # ── Load .env if present ─────────────────────────────────────────────────────
 _env_path = Path(__file__).parent / ".env"
@@ -89,6 +79,10 @@ login_timeout = 180
 
 
 def _load_config() -> dict:
+    try:
+        import tomllib
+    except ImportError:
+        import tomli as tomllib
     if not _CONFIG_FILE.exists():
         _CONFIG_DIR.mkdir(parents=True, exist_ok=True)
         _CONFIG_FILE.write_text(_DEFAULT_CONFIG)
@@ -130,6 +124,7 @@ def make_iv(tenant_id: str, issue_id: str) -> bytes:
 
 
 def decrypt(data: bytes, iv: bytes) -> bytes:
+    from cryptography.hazmat.primitives.ciphers.aead import AESGCM
     return AESGCM(_KEY).decrypt(iv, base64.b64decode(data), None)
 
 
@@ -163,6 +158,7 @@ def get_session_data(book_url: str) -> tuple:
     }
     _stealth = "Object.defineProperty(navigator, 'webdriver', {get: () => undefined})"
 
+    from playwright.sync_api import sync_playwright
     with sync_playwright() as p:
         if not Path(p.chromium.executable_path).exists():
             print("  Installing Chromium (first run only)...")
@@ -221,6 +217,7 @@ def get_session_data(book_url: str) -> tuple:
 
 # ── Book API ──────────────────────────────────────────────────────────────────
 def get_files_urls(cookies: list, volpe_token: str, csrf_token: str) -> list:
+    import requests
     r = requests.post(
         f"{APP_URL}/api/v1/sessions",
         headers={
@@ -250,6 +247,7 @@ def get_files_urls(cookies: list, volpe_token: str, csrf_token: str) -> list:
 
 # ── Page download ─────────────────────────────────────────────────────────────
 def fetch_page(url: str) -> bytes:
+    import requests
     r = requests.get(url, headers=HEADERS_FELINI, timeout=30)
     r.raise_for_status()
     if len(r.content) < 64:
@@ -260,6 +258,7 @@ def fetch_page(url: str) -> bytes:
 def fetch_text_layer(url: str | None, iv: bytes) -> str | None:
     if not url:
         return None
+    import requests
     try:
         r = requests.get(url, headers=HEADERS_FELINI, timeout=30)
         if not r.ok or len(r.content) < 32:
@@ -336,6 +335,7 @@ def build_pdf(page_paths: list, output_path: str, quality: int = 0, text_layers:
     else:
         imgs = [str(p) for p in page_paths]
     print(f"  Assembling {total} pages...")
+    import img2pdf
     img_pdf_bytes = img2pdf.convert(imgs)
 
     if not text_layers or not any(text_layers):
@@ -356,6 +356,7 @@ def build_pdf(page_paths: list, output_path: str, quality: int = 0, text_layers:
 
 
 def _compress_pages(page_paths: list, quality: int, total: int) -> list:
+    from PIL import Image
     result = []
     for i, path in enumerate(page_paths):
         print(f"  [{i + 1:03d}/{total}] compressing...", flush=True)
@@ -385,6 +386,7 @@ def _pdf_font(family: str) -> str:
 
 
 def _make_text_pdf(page_paths: list, text_layers: list, total: int, pdf_sizes: list) -> bytes:
+    from PIL import Image
     from reportlab.pdfgen import canvas as rl_canvas
 
     buf = io.BytesIO()
@@ -530,6 +532,7 @@ def main():
     print(f"\n── [4/4] Building PDF ────────────────────────────")
     text_layers = None
     if args.text_layer:
+        from PIL import Image
         text_layers = []
         for path in saved_pages:
             html_path = path.with_suffix(".html")
