@@ -67,8 +67,8 @@ text_layer = false
 # Keep downloaded page images after building the PDF.
 keep_pages = false
 
-# Number of parallel download workers (for v1.2+).
-jobs = 4
+# Number of parallel download workers.
+jobs = 8
 
 # Seconds to wait between page downloads (0 = no delay).
 page_delay = 0.0
@@ -480,7 +480,7 @@ def main():
         help="Output path for the PDF (default: ./<book-slug>.pdf). Can be a directory.",
     )
     parser.add_argument(
-        "--jobs", type=int, default=_cfg.get("jobs", 4), metavar="N",
+        "--jobs", type=int, default=_cfg.get("jobs", 8), metavar="N",
         help="Parallel download workers (default: %(default)s).",
     )
     args = parser.parse_args()
