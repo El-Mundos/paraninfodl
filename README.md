@@ -1,44 +1,82 @@
 # paraninfodl
 
-Descarga libros de [ebooks.paraninfo.es](https://ebooks.paraninfo.es) como PDF.
+Download ebooks from [ebooks.paraninfo.es](https://ebooks.paraninfo.es) as PDF. Chromium is installed automatically on first run.
 
-## Instalación
+## Installation
 
-```bash
-# Clonar / copiar el proyecto
-cd paraninfo
-
-# Crear entorno virtual
-python3 -m venv .venv
-source .venv/bin/activate  # Linux/Mac
-# .venv\Scripts\activate   # Windows
-
-# Instalar dependencias
-pip install -r requirements.txt
-python3 -m playwright install chromium
-```
-
-## Uso
+### pipx (recommended)
 
 ```bash
-python3 paraninfo_dl.py <url_del_libro>
+pipx install git+https://github.com/El-Mundos/paraninfodl
 ```
 
-**Ejemplo:**
+### uv
 
 ```bash
-python3 paraninfo_dl.py https://ebooks.paraninfo.es/reader/lenguajes-de-marcas-y-sistemas-de-gestion-de-informacion-2a-edicion-2025
+uv tool install git+https://github.com/El-Mundos/paraninfodl
 ```
 
-## Cómo funciona
+### pip
 
-1. **Primera vez:** abre una ventana del navegador para que hagas login con Google. La sesión se guarda en `~/.paraninfo_session.json`.
-2. **Siguientes veces:** usa la sesión guardada automáticamente. Si expira, vuelve a pedir login.
-3. Descarga y descifra todas las páginas del libro.
-4. Genera un PDF con todas las páginas.
+```bash
+pip install git+https://github.com/El-Mundos/paraninfodl
+```
 
-## Notas
+### Arch Linux (AUR)
 
-- El PDF se guarda en el directorio actual con el nombre del libro.
-- La sesión guardada contiene tus cookies — no la compartas.
-- Solo funciona con libros a los que tengas acceso con tu cuenta.
+```bash
+git clone https://aur.archlinux.org/paraninfodl.git
+cd paraninfodl
+makepkg -si
+```
+
+Or with an AUR helper:
+
+```bash
+yay -S paraninfodl
+# or
+paru -S paraninfodl
+```
+
+### From source
+
+```bash
+git clone https://github.com/El-Mundos/paraninfodl
+cd paraninfodl
+pip install .
+```
+
+## Usage
+
+```bash
+paraninfodl <url>
+```
+
+The first run opens a browser window for Google login. The session is saved to `~/.paraninfo_session.json` and reused automatically from then on.
+
+## Options
+
+| Flag | Description |
+|------|-------------|
+| `--quality N` | Re-encode images at JPEG quality N (1–95). Lower = smaller file. Omit for lossless. |
+| `--text-layer` | Add a selectable/searchable text layer to the PDF. |
+| `--keep-pages` | Keep the downloaded page images after building the PDF. |
+
+## Examples
+
+```bash
+# Lossless PDF
+paraninfodl https://ebooks.paraninfo.es/reader/my-book
+
+# Compressed + searchable text
+paraninfodl https://ebooks.paraninfo.es/reader/my-book --quality 75 --text-layer
+
+# Keep page images for inspection
+paraninfodl https://ebooks.paraninfo.es/reader/my-book --keep-pages
+```
+
+## Notes
+
+- Only works with books your account has access to.
+- The saved session contains your cookies — don't share it.
+- If a download is interrupted, re-running the same command resumes from where it left off.

@@ -20,12 +20,14 @@ Las siguientes veces usa la sesión guardada en ~/.paraninfo_session.json.
 """
 
 import os
+import sys
 import io
 import re
 import json
 import base64
 import hashlib
 import shutil
+import subprocess
 import time
 import argparse
 from pathlib import Path
@@ -111,6 +113,11 @@ def get_session_data(book_url: str) -> tuple:
     _stealth = "Object.defineProperty(navigator, 'webdriver', {get: () => undefined})"
 
     with sync_playwright() as p:
+        if not Path(p.chromium.executable_path).exists():
+            print("  Instalando Chromium (solo la primera vez)...")
+            subprocess.run(
+                [sys.executable, "-m", "playwright", "install", "chromium"], check=True
+            )
         browser = p.chromium.launch(headless=saved is not None, args=_launch_args)
         ctx = browser.new_context(**_ctx_opts)
 
