@@ -424,6 +424,37 @@ def _merge_pdfs(img_pdf_bytes: bytes, txt_pdf_bytes: bytes, output_path: str):
         writer.write(f)
 
 
+# ── Parallel download ─────────────────────────────────────────────────────────
+def _download_page(i: int, page_urls: dict, pages_dir: Path, need_text: bool, iv: bytes, delay: float) -> tuple:
+    """Download one page (image + optional text layer). Returns (n, ok, message)."""
+    n = i + 1
+    img_dest = pages_dir / f"{n:03d}.jpg"
+    txt_dest = pages_dir / f"{n:03d}.html"
+
+    need_img = not img_dest.exists()
+    need_txt = need_text and not txt_dest.exists() and bool(page_urls.get("text_layer"))
+
+    if not need_img and not need_txt:
+        return n, True, "cached"
+
+    try:
+        parts = []
+        if need_img:
+            img = fetch_page(page_urls["large"])
+            img_dest.write_bytes(img)
+            parts.append(f"✓ {len(img) // 1024}KB")
+        if need_txt:
+            html = fetch_text_layer(page_urls["text_layer"], iv)
+            if html:
+                txt_dest.write_text(html, encoding="utf-8")
+                parts.append("+txt")
+        if delay:
+            time.sleep(delay)
+        return n, True, " ".join(parts)
+    except Exception as e:
+        return n, False, f"✗ {e}"
+
+
 # ── Main ───────────────────────────────────────────────────────────────────────
 def main():
     parser = argparse.ArgumentParser(
@@ -447,6 +478,10 @@ def main():
     parser.add_argument(
         "-o", "--output", metavar="PATH",
         help="Output path for the PDF (default: ./<book-slug>.pdf). Can be a directory.",
+    )
+    parser.add_argument(
+        "--jobs", type=int, default=_cfg.get("jobs", 4), metavar="N",
+        help="Parallel download workers (default: %(default)s).",
     )
     args = parser.parse_args()
 
@@ -490,40 +525,22 @@ def main():
     _cache_home = Path(os.environ.get("XDG_CACHE_HOME", Path.home() / ".cache"))
     pages_dir = _cache_home / "paraninfodl" / book_slug
     pages_dir.mkdir(parents=True, exist_ok=True)
-    print(f"\n── [3/4] Downloading {total} pages → {pages_dir}/ ──")
+    print(f"\n── [3/4] Downloading {total} pages (jobs={args.jobs}) → {pages_dir}/ ──")
+    import threading
+    from concurrent.futures import ThreadPoolExecutor, as_completed
+    _lock = threading.Lock()
     failed = 0
-    for i, page_urls in enumerate(files_urls):
-        n = i + 1
-        img_dest = pages_dir / f"{n:03d}.jpg"
-        txt_dest = pages_dir / f"{n:03d}.html"
-
-        need_img = not img_dest.exists()
-        need_txt = args.text_layer and not txt_dest.exists() and page_urls.get("text_layer")
-
-        if not need_img and not need_txt:
-            print(f"  [{n:03d}/{total}] already cached, skipping")
-            continue
-
-        print(f"  [{n:03d}/{total}] ", end="", flush=True)
-        ok = True
-        try:
-            if need_img:
-                img = fetch_page(page_urls["large"])
-                img_dest.write_bytes(img)
-                print(f"✓ {len(img) // 1024}KB", end="")
-            if need_txt:
-                html = fetch_text_layer(page_urls["text_layer"], iv)
-                if html:
-                    txt_dest.write_text(html, encoding="utf-8")
-                    print(f" +txt", end="")
-            print()
-        except Exception as e:
-            print(f"✗ {e}")
-            ok = False
-            failed += 1
-
-        if PAGE_DELAY:
-            time.sleep(PAGE_DELAY)
+    with ThreadPoolExecutor(max_workers=args.jobs) as executor:
+        futures = {
+            executor.submit(_download_page, i, page_urls, pages_dir, args.text_layer, iv, PAGE_DELAY): i
+            for i, page_urls in enumerate(files_urls)
+        }
+        for future in as_completed(futures):
+            n, ok, msg = future.result()
+            if not ok:
+                failed += 1
+            with _lock:
+                print(f"  [{n:03d}/{total}] {msg}")
 
     saved_pages = sorted(pages_dir.glob("*.jpg"))
     print(f"\n  OK: {len(saved_pages)}  Failed: {failed}")
