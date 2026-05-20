@@ -1,6 +1,9 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
+# Ensure gpg-agent SSH socket is available (works even when SSH_AUTH_SOCK isn't inherited)
+export SSH_AUTH_SOCK="${SSH_AUTH_SOCK:-/run/user/$(id -u)/gnupg/S.gpg-agent.ssh}"
+
 VERSION="${1:?Usage: ./publish.sh <version>  e.g. ./publish.sh 1.1.0}"
 ROOT="$(cd "$(dirname "$0")" && pwd)"
 cd "$ROOT"
