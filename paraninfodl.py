@@ -1,22 +1,23 @@
 #!/usr/bin/env python3
 """
-paraninfo_dl - Descarga un libro de ebooks.paraninfo.es como PDF.
+paraninfodl - Download an ebook from ebooks.paraninfo.es as a PDF.
 
-Uso:
-    python3 paraninfo_dl.py <url> [opciones]
+Usage:
+    paraninfodl <url> [options]
 
-Opciones:
-    --quality N     Comprimir imágenes a calidad JPEG N (1-95, ej: 85).
-                    Sin esto las imágenes se incrustan sin recodificar.
-    --text-layer    Añadir texto seleccionable/buscable al PDF.
-    --keep-pages    No borrar las imágenes descargadas tras generar el PDF.
+Options:
+    --quality N     Re-encode images at JPEG quality N (1-95, e.g. 85).
+                    Without this, images are embedded without re-encoding.
+    --text-layer    Add a selectable/searchable text layer to the PDF.
+    --keep-pages    Keep the downloaded images after generating the PDF.
+    -o PATH         Output path for the PDF (default: ./<book-slug>.pdf).
 
-Ejemplo:
-    python3 paraninfo_dl.py https://ebooks.paraninfo.es/reader/mi-libro
-    python3 paraninfo_dl.py https://ebooks.paraninfo.es/reader/mi-libro --quality 85 --text-layer
+Example:
+    paraninfodl https://ebooks.paraninfo.es/reader/my-book
+    paraninfodl https://ebooks.paraninfo.es/reader/my-book --quality 85 --text-layer
 
-La primera vez abre una ventana del navegador para login con Google.
-Las siguientes veces usa la sesión guardada en ~/.paraninfo_session.json.
+The first run opens a browser window for Google login.
+Subsequent runs use the saved session at ~/.paraninfo_session.json.
 """
 
 import os
@@ -38,7 +39,7 @@ import img2pdf
 import requests
 from PIL import Image
 
-# ── Cargar .env si existe ─────────────────────────────────────────────────────
+# ── Load .env if present ─────────────────────────────────────────────────────
 _env_path = Path(__file__).parent / ".env"
 if _env_path.exists():
     for line in _env_path.read_text().splitlines():
@@ -47,7 +48,7 @@ if _env_path.exists():
             k, v = line.split("=", 1)
             os.environ.setdefault(k.strip(), v.strip())
 
-# ── Configuración ─────────────────────────────────────────────────────────────
+# ── Configuration ─────────────────────────────────────────────────────────────
 SESSION_FILE = Path(
     os.environ.get("SESSION_FILE", "~/.paraninfo_session.json")
 ).expanduser()
@@ -57,7 +58,7 @@ PAGE_DELAY = float(os.environ.get("PAGE_DELAY", "0"))
 BASE_URL = "https://ebooks.paraninfo.es"
 APP_URL = "https://app.publica.la"
 
-# ── Constantes de descifrado (hardcodeadas en el JS del visor) ────────────────
+# ── Decryption constants (hardcoded in the viewer JS) ────────────────────────
 _KEY = bytes.fromhex("c536859c222f0c3f277b5d9b16bb35b1db035192b9f8586b0db5f3fec6a017e4")
 _IV_SEED = "694338fcfa701ec754bbdbc6"
 
@@ -69,7 +70,7 @@ HEADERS_FELINI = {
 }
 
 
-# ── Criptografía ──────────────────────────────────────────────────────────────
+# ── Cryptography ──────────────────────────────────────────────────────────────
 def make_iv(tenant_id: str, issue_id: str) -> bytes:
     data = json.dumps(
         {"tenant_id": tenant_id, "issue_id": issue_id, "iv_seed": _IV_SEED},
@@ -82,10 +83,10 @@ def decrypt(data: bytes, iv: bytes) -> bytes:
     return AESGCM(_KEY).decrypt(iv, base64.b64decode(data), None)
 
 
-# ── Sesión ────────────────────────────────────────────────────────────────────
+# ── Session ───────────────────────────────────────────────────────────────────
 def save_session(cookies: list):
     SESSION_FILE.write_text(json.dumps({"cookies": cookies}, indent=2))
-    print(f"  Sesión guardada en {SESSION_FILE}")
+    print(f"  Session saved to {SESSION_FILE}")
 
 
 def load_session() -> list | None:
@@ -101,7 +102,7 @@ def cookies_to_header(cookies: list) -> str:
     return "; ".join(f"{c['name']}={c['value']}" for c in cookies)
 
 
-# ── Login + extracción con Playwright ─────────────────────────────────────────
+# ── Login + extraction with Playwright ────────────────────────────────────────
 def get_session_data(book_url: str) -> tuple:
     saved = load_session()
 
@@ -114,7 +115,7 @@ def get_session_data(book_url: str) -> tuple:
 
     with sync_playwright() as p:
         if not Path(p.chromium.executable_path).exists():
-            print("  Instalando Chromium (solo la primera vez)...")
+            print("  Installing Chromium (first run only)...")
             subprocess.run(
                 [sys.executable, "-m", "playwright", "install", "chromium"], check=True
             )
@@ -123,7 +124,7 @@ def get_session_data(book_url: str) -> tuple:
 
         if saved:
             ctx.add_cookies(saved)
-            print("  Usando sesión guardada...")
+            print("  Using saved session...")
 
         page = ctx.new_page()
         page.add_init_script(_stealth)
@@ -141,19 +142,19 @@ def get_session_data(book_url: str) -> tuple:
 
         if needs_login:
             browser.close()
-            print("  Abriendo navegador para login...")
+            print("  Opening browser for login...")
             browser = p.chromium.launch(headless=False, args=_launch_args)
             ctx = browser.new_context(**_ctx_opts)
             page = ctx.new_page()
             page.add_init_script(_stealth)
             page.goto(f"{BASE_URL}/auth/login")
-            print("  → Haz login con Google en la ventana que se ha abierto.")
-            print("  → El script continuará automáticamente al terminar.\n")
+            print("  → Log in with Google in the browser window.")
+            print("  → The script will continue automatically once done.\n")
             page.wait_for_url(f"{BASE_URL}/library**", timeout=LOGIN_TIMEOUT)
             page.goto(book_url, wait_until="domcontentloaded")
             page.wait_for_function("window.volpe && window.volpe.token", timeout=30_000)
 
-        print("  Esperando que cargue el visor...")
+        print("  Waiting for the viewer to load...")
         volpe_token = page.evaluate("window.volpe.token")
         csrf_token = page.evaluate(
             "document.querySelector('meta[name=\"csrf-token\"]')?.content || ''"
@@ -168,7 +169,7 @@ def get_session_data(book_url: str) -> tuple:
     return cookies, volpe_token, csrf_token, tenant_id, issue_id
 
 
-# ── API del libro ─────────────────────────────────────────────────────────────
+# ── Book API ──────────────────────────────────────────────────────────────────
 def get_files_urls(cookies: list, volpe_token: str, csrf_token: str) -> list:
     r = requests.post(
         f"{APP_URL}/api/v1/sessions",
@@ -197,7 +198,7 @@ def get_files_urls(cookies: list, volpe_token: str, csrf_token: str) -> list:
     return r.json()["files_urls"]
 
 
-# ── Descarga de páginas ───────────────────────────────────────────────────────
+# ── Page download ─────────────────────────────────────────────────────────────
 def fetch_page(url: str) -> bytes:
     r = requests.get(url, headers=HEADERS_FELINI, timeout=30)
     r.raise_for_status()
@@ -218,7 +219,7 @@ def fetch_text_layer(url: str | None, iv: bytes) -> str | None:
         return None
 
 
-# ── Parsing de capa de texto ──────────────────────────────────────────────────
+# ── Text layer parsing ────────────────────────────────────────────────────────
 class _SpanParser(HTMLParser):
     def __init__(self):
         super().__init__()
@@ -275,7 +276,7 @@ def parse_text_layer(html: str, page_w: int | None = None, page_h: int | None = 
     return result
 
 
-# ── Generación de PDF ─────────────────────────────────────────────────────────
+# ── PDF generation ────────────────────────────────────────────────────────────
 def build_pdf(page_paths: list, output_path: str, quality: int = 0, text_layers: list | None = None):
     total = len(page_paths)
 
@@ -284,7 +285,7 @@ def build_pdf(page_paths: list, output_path: str, quality: int = 0, text_layers:
         imgs = _compress_pages(page_paths, quality, total)
     else:
         imgs = [str(p) for p in page_paths]
-    print(f"  Ensamblando {total} páginas...")
+    print(f"  Assembling {total} pages...")
     img_pdf_bytes = img2pdf.convert(imgs)
 
     if not text_layers or not any(text_layers):
@@ -294,7 +295,7 @@ def build_pdf(page_paths: list, output_path: str, quality: int = 0, text_layers:
 
     # Read the actual page sizes img2pdf chose (pixels→points via DPI conversion)
     # so the text overlay uses the exact same coordinate space
-    print(f"  Añadiendo capa de texto...")
+    print(f"  Adding text layer...")
     from pypdf import PdfReader
     pdf_sizes = [
         (float(p.mediabox.width), float(p.mediabox.height))
@@ -307,7 +308,7 @@ def build_pdf(page_paths: list, output_path: str, quality: int = 0, text_layers:
 def _compress_pages(page_paths: list, quality: int, total: int) -> list:
     result = []
     for i, path in enumerate(page_paths):
-        print(f"  [{i + 1:03d}/{total}] comprimiendo...", flush=True)
+        print(f"  [{i + 1:03d}/{total}] compressing...", flush=True)
         buf = io.BytesIO()
         Image.open(path).save(buf, format="JPEG", quality=quality, optimize=True)
         result.append(buf.getvalue())
@@ -374,30 +375,30 @@ def _merge_pdfs(img_pdf_bytes: bytes, txt_pdf_bytes: bytes, output_path: str):
 # ── Main ───────────────────────────────────────────────────────────────────────
 def main():
     parser = argparse.ArgumentParser(
-        description="Descarga un libro de ebooks.paraninfo.es como PDF.",
+        description="Download an ebook from ebooks.paraninfo.es as a PDF.",
         formatter_class=argparse.RawDescriptionHelpFormatter,
     )
-    parser.add_argument("url", help="URL del libro")
+    parser.add_argument("url", help="URL of the book")
     parser.add_argument(
         "--quality", type=int, default=0, metavar="N",
-        help="Comprimir imágenes a calidad JPEG N (1-95, ej: 85).",
+        help="Re-encode images at JPEG quality N (1-95, e.g. 85).",
     )
     parser.add_argument(
         "--text-layer", action="store_true",
-        help="Añadir texto seleccionable/buscable al PDF.",
+        help="Add a selectable/searchable text layer to the PDF.",
     )
     parser.add_argument(
         "--keep-pages", action="store_true",
-        help="No borrar las imágenes JPG tras generar el PDF.",
+        help="Keep the downloaded page images after building the PDF.",
     )
     parser.add_argument(
         "-o", "--output", metavar="PATH",
-        help="Ruta de salida del PDF (por defecto: ./<libro>.pdf). Puede ser un directorio.",
+        help="Output path for the PDF (default: ./<book-slug>.pdf). Can be a directory.",
     )
     args = parser.parse_args()
 
     if args.quality and not (1 <= args.quality <= 95):
-        parser.error("--quality debe estar entre 1 y 95")
+        parser.error("--quality must be between 1 and 95")
 
     book_url = args.url.split("?")[0].rstrip("/")
     book_slug = book_url.split("/")[-1]
@@ -410,25 +411,25 @@ def main():
 
     print(f"\n{'─' * 56}")
     print(f"  paraninfo_dl")
-    print(f"  Libro  : {book_slug}")
-    print(f"  Salida : {output}")
+    print(f"  Book   : {book_slug}")
+    print(f"  Output : {output}")
     if args.quality:
-        print(f"  Calidad: {args.quality}%")
+        print(f"  Quality: {args.quality}%")
     if args.text_layer:
-        print(f"  Modo   : texto seleccionable")
+        print(f"  Mode   : searchable text")
     print(f"{'─' * 56}\n")
 
-    # 1. Sesión
-    print("── [1/4] Sesión ──────────────────────────────────")
+    # 1. Session
+    print("── [1/4] Session ─────────────────────────────────")
     cookies, volpe_token, csrf_token, tenant_id, issue_id = get_session_data(book_url)
     print(f"  tenant_id : {tenant_id}")
     print(f"  issue_id  : {issue_id}")
 
-    # 2. URLs de páginas
-    print("\n── [2/4] Obteniendo URLs de páginas ──────────────")
+    # 2. Page URLs
+    print("\n── [2/4] Fetching page URLs ───────────────────────")
     files_urls = get_files_urls(cookies, volpe_token, csrf_token)
     total = len(files_urls)
-    print(f"  Páginas: {total}")
+    print(f"  Pages: {total}")
 
     iv = make_iv(tenant_id, issue_id)
 
@@ -436,7 +437,7 @@ def main():
     _cache_home = Path(os.environ.get("XDG_CACHE_HOME", Path.home() / ".cache"))
     pages_dir = _cache_home / "paraninfodl" / book_slug
     pages_dir.mkdir(parents=True, exist_ok=True)
-    print(f"\n── [3/4] Descargando {total} páginas → {pages_dir}/ ──")
+    print(f"\n── [3/4] Downloading {total} pages → {pages_dir}/ ──")
     failed = 0
     for i, page_urls in enumerate(files_urls):
         n = i + 1
@@ -447,7 +448,7 @@ def main():
         need_txt = args.text_layer and not txt_dest.exists() and page_urls.get("text_layer")
 
         if not need_img and not need_txt:
-            print(f"  [{n:03d}/{total}] ya existe, saltando")
+            print(f"  [{n:03d}/{total}] already cached, skipping")
             continue
 
         print(f"  [{n:03d}/{total}] ", end="", flush=True)
@@ -472,10 +473,10 @@ def main():
             time.sleep(PAGE_DELAY)
 
     saved_pages = sorted(pages_dir.glob("*.jpg"))
-    print(f"\n  OK: {len(saved_pages)}  Fallidas: {failed}")
+    print(f"\n  OK: {len(saved_pages)}  Failed: {failed}")
 
     # 4. PDF
-    print(f"\n── [4/4] Generando PDF ───────────────────────────")
+    print(f"\n── [4/4] Building PDF ────────────────────────────")
     text_layers = None
     if args.text_layer:
         text_layers = []
@@ -491,10 +492,10 @@ def main():
 
     if not args.keep_pages:
         shutil.rmtree(pages_dir)
-        print(f"  Imágenes eliminadas.")
+        print(f"  Cache cleared.")
 
     size_mb = os.path.getsize(output) / 1_048_576
-    print(f"\n✓ Listo: {output} ({size_mb:.1f} MB, {len(saved_pages)} páginas)\n")
+    print(f"\n✓ Done: {output} ({size_mb:.1f} MB, {len(saved_pages)} pages)\n")
 
 
 if __name__ == "__main__":
