@@ -17,7 +17,7 @@ Example:
     paraninfodl https://ebooks.paraninfo.es/reader/my-book --quality 85 --text-layer
 
 The first run opens a browser window for Google login.
-Subsequent runs use the saved session at ~/.paraninfo_session.json.
+Subsequent runs use the saved session at ~/.config/paraninfodl/session.json.
 """
 
 import os
@@ -39,6 +39,17 @@ import img2pdf
 import requests
 from PIL import Image
 
+try:
+    from importlib.metadata import version as _pkg_version
+    __version__ = _pkg_version("paraninfodl")
+except Exception:
+    __version__ = "dev"
+
+try:
+    import tomllib
+except ImportError:
+    import tomli as tomllib
+
 # ── Load .env if present ─────────────────────────────────────────────────────
 _env_path = Path(__file__).parent / ".env"
 if _env_path.exists():
@@ -49,11 +60,50 @@ if _env_path.exists():
             os.environ.setdefault(k.strip(), v.strip())
 
 # ── Configuration ─────────────────────────────────────────────────────────────
+_CONFIG_DIR = Path(os.environ.get("XDG_CONFIG_HOME", Path.home() / ".config")) / "paraninfodl"
+_CONFIG_FILE = _CONFIG_DIR / "config.toml"
+
+_DEFAULT_CONFIG = """\
+# paraninfodl configuration
+# https://github.com/El-Mundos/paraninfodl
+
+[settings]
+# Re-encode images at this JPEG quality (1-95). 0 = lossless (no re-encoding).
+quality = 0
+
+# Add a selectable/searchable text layer to the PDF.
+text_layer = false
+
+# Keep downloaded page images after building the PDF.
+keep_pages = false
+
+# Number of parallel download workers (for v1.2+).
+jobs = 4
+
+# Seconds to wait between page downloads (0 = no delay).
+page_delay = 0.0
+
+# Seconds to wait for Google login before timing out.
+login_timeout = 180
+"""
+
+
+def _load_config() -> dict:
+    if not _CONFIG_FILE.exists():
+        _CONFIG_DIR.mkdir(parents=True, exist_ok=True)
+        _CONFIG_FILE.write_text(_DEFAULT_CONFIG)
+        return {}
+    with open(_CONFIG_FILE, "rb") as f:
+        return tomllib.load(f).get("settings", {})
+
+
+_cfg = _load_config()
+
 SESSION_FILE = Path(
-    os.environ.get("SESSION_FILE", "~/.paraninfo_session.json")
+    os.environ.get("SESSION_FILE", _CONFIG_DIR / "session.json")
 ).expanduser()
-LOGIN_TIMEOUT = int(os.environ.get("LOGIN_TIMEOUT", "180")) * 1000  # ms
-PAGE_DELAY = float(os.environ.get("PAGE_DELAY", "0"))
+LOGIN_TIMEOUT = int(os.environ.get("LOGIN_TIMEOUT", _cfg.get("login_timeout", 180))) * 1000
+PAGE_DELAY = float(os.environ.get("PAGE_DELAY", _cfg.get("page_delay", 0.0)))
 
 BASE_URL = "https://ebooks.paraninfo.es"
 APP_URL = "https://app.publica.la"
@@ -378,17 +428,18 @@ def main():
         description="Download an ebook from ebooks.paraninfo.es as a PDF.",
         formatter_class=argparse.RawDescriptionHelpFormatter,
     )
+    parser.add_argument("--version", action="version", version=f"%(prog)s {__version__}")
     parser.add_argument("url", help="URL of the book")
     parser.add_argument(
-        "--quality", type=int, default=0, metavar="N",
-        help="Re-encode images at JPEG quality N (1-95, e.g. 85).",
+        "--quality", type=int, default=_cfg.get("quality", 0), metavar="N",
+        help="Re-encode images at JPEG quality N (1-95, e.g. 85). Config default: %(default)s.",
     )
     parser.add_argument(
-        "--text-layer", action="store_true",
+        "--text-layer", action="store_true", default=_cfg.get("text_layer", False),
         help="Add a selectable/searchable text layer to the PDF.",
     )
     parser.add_argument(
-        "--keep-pages", action="store_true",
+        "--keep-pages", action="store_true", default=_cfg.get("keep_pages", False),
         help="Keep the downloaded page images after building the PDF.",
     )
     parser.add_argument(
@@ -433,7 +484,7 @@ def main():
 
     iv = make_iv(tenant_id, issue_id)
 
-    # 3. Descargar
+    # 3. Download
     _cache_home = Path(os.environ.get("XDG_CACHE_HOME", Path.home() / ".cache"))
     pages_dir = _cache_home / "paraninfodl" / book_slug
     pages_dir.mkdir(parents=True, exist_ok=True)
