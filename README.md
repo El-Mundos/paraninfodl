@@ -58,6 +58,7 @@ The first run opens a browser window for Google login. The session is saved to `
 
 | Flag | Description |
 |------|-------------|
+| `-o PATH` | Output path for the PDF. Can be a file or a directory. Defaults to `./<book-slug>.pdf`. |
 | `--quality N` | Re-encode images at JPEG quality N (1–95). Lower = smaller file. Omit for lossless. |
 | `--text-layer` | Add a selectable/searchable text layer to the PDF. |
 | `--keep-pages` | Keep the downloaded page images after building the PDF. |
@@ -78,5 +79,5 @@ paraninfodl https://ebooks.paraninfo.es/reader/my-book --keep-pages
 ## Notes
 
 - Only works with books your account has access to.
-- The saved session contains your cookies — don't share it.
-- If a download is interrupted, re-running the same command resumes from where it left off.
+- The saved session (`~/.paraninfo_session.json`) contains your cookies — don't share it.
+- Page images are cached in `~/.cache/paraninfodl/<book-slug>/` and deleted after the PDF is built (unless `--keep-pages` is set). Re-running resumes from where it left off regardless of which directory you run from.

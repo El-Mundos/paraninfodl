@@ -390,6 +390,10 @@ def main():
         "--keep-pages", action="store_true",
         help="No borrar las imágenes JPG tras generar el PDF.",
     )
+    parser.add_argument(
+        "-o", "--output", metavar="PATH",
+        help="Ruta de salida del PDF (por defecto: ./<libro>.pdf). Puede ser un directorio.",
+    )
     args = parser.parse_args()
 
     if args.quality and not (1 <= args.quality <= 95):
@@ -397,7 +401,12 @@ def main():
 
     book_url = args.url.split("?")[0].rstrip("/")
     book_slug = book_url.split("/")[-1]
-    output = f"{book_slug}.pdf"
+
+    if args.output:
+        out = Path(args.output)
+        output = str(out / f"{book_slug}.pdf" if out.is_dir() else out)
+    else:
+        output = f"{book_slug}.pdf"
 
     print(f"\n{'─' * 56}")
     print(f"  paraninfo_dl")
@@ -424,8 +433,9 @@ def main():
     iv = make_iv(tenant_id, issue_id)
 
     # 3. Descargar
-    pages_dir = Path(f"{book_slug}_pages")
-    pages_dir.mkdir(exist_ok=True)
+    _cache_home = Path(os.environ.get("XDG_CACHE_HOME", Path.home() / ".cache"))
+    pages_dir = _cache_home / "paraninfodl" / book_slug
+    pages_dir.mkdir(parents=True, exist_ok=True)
     print(f"\n── [3/4] Descargando {total} páginas → {pages_dir}/ ──")
     failed = 0
     for i, page_urls in enumerate(files_urls):
