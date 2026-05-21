@@ -33,4 +33,6 @@ build() {
 package() {
     cd "$pkgname-$pkgver"
     python -m installer --destdir="$pkgdir" dist/*.whl
+    install -Dm644 completions/paraninfodl.fish \
+        "$pkgdir/usr/share/fish/vendor_completions.d/paraninfodl.fish"
 }

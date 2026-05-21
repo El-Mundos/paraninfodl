@@ -425,14 +425,14 @@ def _merge_pdfs(img_pdf_bytes: bytes, txt_pdf_bytes: bytes, output_path: str):
 
 
 # ── Parallel download ─────────────────────────────────────────────────────────
-def _download_page(i: int, page_urls: dict, pages_dir: Path, need_text: bool, iv: bytes, delay: float) -> tuple:
+def _download_page(i: int, page_urls: dict, pages_dir: Path, need_text: bool, iv: bytes, delay: float, no_cache: bool = False) -> tuple:
     """Download one page (image + optional text layer). Returns (n, ok, message)."""
     n = i + 1
     img_dest = pages_dir / f"{n:03d}.jpg"
     txt_dest = pages_dir / f"{n:03d}.html"
 
-    need_img = not img_dest.exists()
-    need_txt = need_text and not txt_dest.exists() and bool(page_urls.get("text_layer"))
+    need_img = no_cache or not img_dest.exists()
+    need_txt = need_text and (no_cache or not txt_dest.exists()) and bool(page_urls.get("text_layer"))
 
     if not need_img and not need_txt:
         return n, True, "cached"
@@ -483,6 +483,10 @@ def main():
         "--jobs", type=int, default=_cfg.get("jobs", 8), metavar="N",
         help="Parallel download workers (default: %(default)s).",
     )
+    parser.add_argument(
+        "--no-cache", action="store_true",
+        help="Re-download all pages even if already cached.",
+    )
     args = parser.parse_args()
 
     if args.quality and not (1 <= args.quality <= 95):
@@ -529,21 +533,34 @@ def main():
     import threading
     from concurrent.futures import ThreadPoolExecutor, as_completed
     _lock = threading.Lock()
-    failed = 0
-    with ThreadPoolExecutor(max_workers=args.jobs) as executor:
-        futures = {
-            executor.submit(_download_page, i, page_urls, pages_dir, args.text_layer, iv, PAGE_DELAY): i
-            for i, page_urls in enumerate(files_urls)
-        }
-        for future in as_completed(futures):
-            n, ok, msg = future.result()
-            if not ok:
-                failed += 1
-            with _lock:
-                print(f"  [{n:03d}/{total}] {msg}")
+    failed_indices = []
+
+    def _run_batch(indices, no_cache=False):
+        with ThreadPoolExecutor(max_workers=args.jobs) as executor:
+            futures = {
+                executor.submit(_download_page, i, files_urls[i], pages_dir, args.text_layer, iv, PAGE_DELAY, no_cache): i
+                for i in indices
+            }
+            for future in as_completed(futures):
+                n, ok, msg = future.result()
+                with _lock:
+                    print(f"  [{n:03d}/{total}] {msg}")
+                if not ok:
+                    failed_indices.append(futures[future])
+
+    _run_batch(range(total), no_cache=args.no_cache)
+
+    for attempt, wait in enumerate([2, 5, 10], 1):
+        if not failed_indices:
+            break
+        retrying = failed_indices[:]
+        failed_indices.clear()
+        print(f"\n  Retrying {len(retrying)} failed page(s) (attempt {attempt}/3, waiting {wait}s)...")
+        time.sleep(wait)
+        _run_batch(retrying)
 
     saved_pages = sorted(pages_dir.glob("*.jpg"))
-    print(f"\n  OK: {len(saved_pages)}  Failed: {failed}")
+    print(f"\n  OK: {len(saved_pages)}  Failed: {len(failed_indices)}")
 
     # 4. PDF
     print(f"\n── [4/4] Building PDF ────────────────────────────")

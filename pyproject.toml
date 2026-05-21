@@ -28,3 +28,7 @@ paraninfodl = "paraninfodl:main"
 
 [tool.setuptools]
 py-modules = ["paraninfodl"]
+include-package-data = true
+
+[tool.setuptools.data-files]
+"share/fish/vendor_completions.d" = ["completions/paraninfodl.fish"]
