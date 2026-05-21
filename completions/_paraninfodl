@@ -1,0 +1,15 @@
+#compdef paraninfodl
+
+_paraninfodl() {
+    _arguments \
+        '--quality[JPEG quality 1-95]:quality (1-95)' \
+        '--text-layer[Add selectable text layer to PDF]' \
+        '--keep-pages[Keep page images after building PDF]' \
+        {-o,--output}'[Output path for PDF]:output file:_files' \
+        '--jobs[Parallel download workers]:workers' \
+        '--no-cache[Re-download all pages ignoring cache]' \
+        '--version[Show version and exit]' \
+        '--help[Show help]'
+}
+
+_paraninfodl "$@"

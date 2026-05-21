@@ -32,3 +32,5 @@ include-package-data = true
 
 [tool.setuptools.data-files]
 "share/fish/vendor_completions.d" = ["completions/paraninfodl.fish"]
+"share/bash-completion/completions" = ["completions/paraninfodl.bash"]
+"share/zsh/site-functions" = ["completions/_paraninfodl"]

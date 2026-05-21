@@ -30,6 +30,7 @@ import hashlib
 import shutil
 import subprocess
 import time
+import threading
 import argparse
 from pathlib import Path
 from html.parser import HTMLParser
@@ -424,6 +425,39 @@ def _merge_pdfs(img_pdf_bytes: bytes, txt_pdf_bytes: bytes, output_path: str):
         writer.write(f)
 
 
+# ── Progress display ──────────────────────────────────────────────────────────
+class _Progress:
+    _RED   = "\033[31m"
+    _RESET = "\033[0m"
+    _BAR_W = 28
+
+    def __init__(self, total: int, label: str):
+        self.total = total
+        self.label = label
+        self.done = 0
+        self.failed = 0
+        self._lock = threading.Lock()
+        self._w = len(str(total))
+
+    def update(self, ok: bool) -> None:
+        with self._lock:
+            self.done += 1
+            if not ok:
+                self.failed += 1
+            self._draw()
+
+    def _draw(self) -> None:
+        filled = int(self._BAR_W * self.done / max(self.total, 1))
+        bar = "█" * filled + "░" * (self._BAR_W - filled)
+        fail = f"  {self._RED}✗ {self.failed} failed{self._RESET}" if self.failed else ""
+        print(f"\r  [{self.done:>{self._w}}/{self.total}] {bar}  {self.label}{fail}  ", end="", flush=True)
+
+    def finish(self) -> None:
+        with self._lock:
+            self._draw()
+            print()
+
+
 # ── Parallel download ─────────────────────────────────────────────────────────
 def _download_page(i: int, page_urls: dict, pages_dir: Path, need_text: bool, iv: bytes, delay: float, no_cache: bool = False) -> tuple:
     """Download one page (image + optional text layer). Returns (n, ok, message)."""
@@ -530,37 +564,39 @@ def main():
     pages_dir = _cache_home / "paraninfodl" / book_slug
     pages_dir.mkdir(parents=True, exist_ok=True)
     print(f"\n── [3/4] Downloading {total} pages (jobs={args.jobs}) → {pages_dir}/ ──")
-    import threading
     from concurrent.futures import ThreadPoolExecutor, as_completed
-    _lock = threading.Lock()
     failed_indices = []
 
-    def _run_batch(indices, no_cache=False):
+    def _run_batch(indices, label, no_cache=False):
+        indices = list(indices)
+        prog = _Progress(len(indices), label)
         with ThreadPoolExecutor(max_workers=args.jobs) as executor:
             futures = {
                 executor.submit(_download_page, i, files_urls[i], pages_dir, args.text_layer, iv, PAGE_DELAY, no_cache): i
                 for i in indices
             }
             for future in as_completed(futures):
-                n, ok, msg = future.result()
-                with _lock:
-                    print(f"  [{n:03d}/{total}] {msg}")
+                n, ok, _ = future.result()
+                prog.update(ok)
                 if not ok:
                     failed_indices.append(futures[future])
+        prog.finish()
 
-    _run_batch(range(total), no_cache=args.no_cache)
+    _run_batch(range(total), "Downloading...", no_cache=args.no_cache)
 
     for attempt, wait in enumerate([2, 5, 10], 1):
         if not failed_indices:
             break
         retrying = failed_indices[:]
         failed_indices.clear()
-        print(f"\n  Retrying {len(retrying)} failed page(s) (attempt {attempt}/3, waiting {wait}s)...")
+        print(f"  Waiting {wait}s before retry {attempt}/3...")
         time.sleep(wait)
-        _run_batch(retrying)
+        _run_batch(retrying, f"Retrying ({attempt}/3)...")
 
     saved_pages = sorted(pages_dir.glob("*.jpg"))
-    print(f"\n  OK: {len(saved_pages)}  Failed: {len(failed_indices)}")
+    if failed_indices:
+        print(f"  {_Progress._RED}✗ {len(failed_indices)} page(s) failed permanently{_Progress._RESET}")
+    print(f"  {len(saved_pages)} pages ready")
 
     # 4. PDF
     print(f"\n── [4/4] Building PDF ────────────────────────────")

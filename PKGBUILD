@@ -35,4 +35,8 @@ package() {
     python -m installer --destdir="$pkgdir" dist/*.whl
     install -Dm644 completions/paraninfodl.fish \
         "$pkgdir/usr/share/fish/vendor_completions.d/paraninfodl.fish"
+    install -Dm644 completions/paraninfodl.bash \
+        "$pkgdir/usr/share/bash-completion/completions/paraninfodl"
+    install -Dm644 completions/_paraninfodl \
+        "$pkgdir/usr/share/zsh/site-functions/_paraninfodl"
 }
